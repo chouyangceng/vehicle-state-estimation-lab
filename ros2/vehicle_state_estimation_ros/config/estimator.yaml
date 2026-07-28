@@ -2,6 +2,9 @@ vehicle_state_estimator:
   ros__parameters:
     input_odometry_topic: /odometry/filtered
     input_imu_topic: /imu/data
+    input_gnss_topic: /gnss/fix
+    input_wheel_speed_topic: /wheel_states
+    wheel_radius: 0.3
     output_topic: /state_estimate
     diagnostics_topic: /diagnostics
     measurement_std: 0.05

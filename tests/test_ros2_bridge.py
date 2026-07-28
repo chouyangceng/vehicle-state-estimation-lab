@@ -13,8 +13,10 @@ sys.path.insert(0, str(ROS2_PACKAGE))
 
 from vehicle_state_estimation_ros.bridge import (  # noqa: E402
     imu_to_measurement,
+    navsatfix_to_local_position,
     odometry_to_measurement,
     quaternion_to_yaw,
+    wheel_speed_to_velocity,
 )
 
 
@@ -53,3 +55,21 @@ def test_odometry_to_measurement_extracts_vehicle_velocity_and_position() -> Non
 def test_quaternion_to_yaw_rejects_zero_norm_quaternion() -> None:
     with pytest.raises(ValueError, match="non-zero norm"):
         quaternion_to_yaw(SimpleNamespace(x=0.0, y=0.0, z=0.0, w=0.0))
+
+
+def test_navsatfix_to_local_position_uses_equirectangular_enu_projection() -> None:
+    reference = SimpleNamespace(latitude=30.0, longitude=114.0, altitude=20.0)
+    fix = SimpleNamespace(latitude=30.0001, longitude=114.0002, altitude=23.5)
+
+    position = navsatfix_to_local_position(fix, reference)
+
+    assert position.shape == (3,)
+    np.testing.assert_allclose(position, [19.26, 11.12, 3.5], atol=0.15)
+
+
+def test_wheel_speed_to_velocity_accepts_joint_state_angular_velocity() -> None:
+    msg = SimpleNamespace(velocity=[10.0, 10.2, 9.8, 10.1])
+
+    velocity = wheel_speed_to_velocity(msg, wheel_radius=0.3)
+
+    assert velocity == pytest.approx(3.0075)

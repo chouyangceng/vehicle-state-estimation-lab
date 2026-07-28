@@ -47,7 +47,8 @@ Apache-2.0
 ## ROS 2 接口
 
 项目包含可选的 ROS 2 Python 包：`ros2/vehicle_state_estimation_ros`。它提供
-`sensor_msgs/Imu`、`nav_msgs/Odometry` 和 `diagnostic_msgs/DiagnosticArray` 的
-标准消息接口，以及 `ros2 launch vehicle_state_estimation_ros estimator.launch.py`
+`sensor_msgs/Imu`、`sensor_msgs/NavSatFix`、`sensor_msgs/JointState`、
+`nav_msgs/Odometry` 和 `diagnostic_msgs/DiagnosticArray` 的标准消息接口，以及
+`ros2 launch vehicle_state_estimation_ros estimator.launch.py`
 启动文件。详细安装步骤、话题和参数见 [`docs/ros2.md`](docs/ros2.md)。核心算法不
 依赖 ROS 2，未安装 `rclpy` 时仍可运行原有仿真与测试。

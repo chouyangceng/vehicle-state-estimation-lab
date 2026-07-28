@@ -8,7 +8,9 @@ from .bridge import (
     Ros2UnavailableError,
     imu_to_measurement,
     measurement_to_odometry,
+    navsatfix_to_local_position,
     odometry_to_measurement,
+    wheel_speed_to_velocity,
 )
 
 try:  # ROS 2 is optional for the research algorithms and unit tests.
@@ -16,7 +18,7 @@ try:  # ROS 2 is optional for the research algorithms and unit tests.
     from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
     from nav_msgs.msg import Odometry
     from rclpy.node import Node
-    from sensor_msgs.msg import Imu
+    from sensor_msgs.msg import Imu, JointState, NavSatFix
 
     ROS2_AVAILABLE = True
 except ImportError:  # pragma: no cover - depends on the host environment
@@ -34,6 +36,9 @@ if ROS2_AVAILABLE:
             super().__init__("vehicle_state_estimator")
             self.declare_parameter("input_odometry_topic", "/odometry/filtered")
             self.declare_parameter("input_imu_topic", "/imu/data")
+            self.declare_parameter("input_gnss_topic", "/gnss/fix")
+            self.declare_parameter("input_wheel_speed_topic", "/wheel_states")
+            self.declare_parameter("wheel_radius", 0.3)
             self.declare_parameter("output_topic", "/state_estimate")
             self.declare_parameter("diagnostics_topic", "/diagnostics")
             self.declare_parameter("measurement_std", 0.05)
@@ -42,17 +47,35 @@ if ROS2_AVAILABLE:
             self._measurement_noise = float(self.get_parameter("measurement_std").value) ** 2
             odometry_topic = str(self.get_parameter("input_odometry_topic").value)
             imu_topic = str(self.get_parameter("input_imu_topic").value)
+            gnss_topic = str(self.get_parameter("input_gnss_topic").value)
+            wheel_topic = str(self.get_parameter("input_wheel_speed_topic").value)
+            self._wheel_radius = float(self.get_parameter("wheel_radius").value)
             output_topic = str(self.get_parameter("output_topic").value)
             diagnostics_topic = str(self.get_parameter("diagnostics_topic").value)
             self._last_imu: np.ndarray | None = None
+            self._gnss_reference: NavSatFix | None = None
+            self._last_gnss: np.ndarray | None = None
+            self._last_wheel_speed: float | None = None
 
             self._publisher = self.create_publisher(Odometry, output_topic, 10)
             self._diagnostics_publisher = self.create_publisher(DiagnosticArray, diagnostics_topic, 10)
             self.create_subscription(Odometry, odometry_topic, self._on_odometry, 10)
             self.create_subscription(Imu, imu_topic, self._on_imu, 10)
+            self.create_subscription(NavSatFix, gnss_topic, self._on_gnss, 10)
+            self.create_subscription(JointState, wheel_topic, self._on_wheel_speed, 10)
 
         def _on_imu(self, message: Imu) -> None:
             self._last_imu = imu_to_measurement(message)
+
+        def _on_gnss(self, message: NavSatFix) -> None:
+            if self._gnss_reference is None:
+                self._gnss_reference = message
+            self._last_gnss = navsatfix_to_local_position(message, self._gnss_reference)
+
+        def _on_wheel_speed(self, message: JointState) -> None:
+            self._last_wheel_speed = wheel_speed_to_velocity(
+                message, wheel_radius=self._wheel_radius
+            )
 
         def _on_odometry(self, message: Odometry) -> None:
             observation = odometry_to_measurement(message)
@@ -80,6 +103,10 @@ if ROS2_AVAILABLE:
                 status.level = DiagnosticStatus.OK
                 status.message = "IMU stream healthy"
                 status.values.append(KeyValue(key="yaw_rate", value=f"{self._last_imu[3]:.6f}"))
+            if self._last_gnss is not None:
+                status.values.append(KeyValue(key="gnss_east_m", value=f"{self._last_gnss[0]:.3f}"))
+            if self._last_wheel_speed is not None:
+                status.values.append(KeyValue(key="wheel_speed_mps", value=f"{self._last_wheel_speed:.3f}"))
             diagnostics.status.append(status)
             self._diagnostics_publisher.publish(diagnostics)
 
@@ -107,4 +134,3 @@ def main(args: list[str] | None = None) -> None:
     finally:
         node.destroy_node()
         rclpy.shutdown()
-
