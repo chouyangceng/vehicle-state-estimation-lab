@@ -1,0 +1,7 @@
+vehicle_state_estimator:
+  ros__parameters:
+    input_odometry_topic: /odometry/filtered
+    input_imu_topic: /imu/data
+    output_topic: /state_estimate
+    diagnostics_topic: /diagnostics
+    measurement_std: 0.05
