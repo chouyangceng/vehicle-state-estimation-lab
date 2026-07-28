@@ -42,6 +42,9 @@ ros2 launch vehicle_state_estimation_ros estimator.launch.py
   `rclpy` 的 CI 环境中测试。
 - `NavSatFix` 使用小范围等距近似投影到 ENU；`JointState.velocity` 的多轮速度取均值，
   也兼容离线记录中常见的 `Float64.data` 字段。
+- 当前示例节点的 EKF 更新使用 `Odometry` 六维观测；IMU、GNSS 和轮速输入用于链路
+  监视与诊断，尚未自动融合进 EKF，避免在缺少时间同步和协方差标定时产生错误融合。
+  轮速约定为车辆前进方向为正，若底盘驱动器输出相反符号，应在驱动桥或参数层取反。
 - `estimator_node.py` 在 ROS 2 不可用时不会破坏核心包导入，而是在尝试启动节点
   时给出明确的安装提示。
 - 状态向量为 `[vx, vy, yaw_rate, x, y, yaw]`，单位分别为 m/s、rad/s、m 和 rad。

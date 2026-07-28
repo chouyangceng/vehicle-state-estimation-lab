@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
 import pytest
-
-
-ROS2_PACKAGE = Path(__file__).parents[1] / "ros2" / "vehicle_state_estimation_ros"
-sys.path.insert(0, str(ROS2_PACKAGE))
-
-from vehicle_state_estimation_ros.bridge import (  # noqa: E402
+from vehicle_state_estimation_ros.bridge import (
     imu_to_measurement,
+    navsatfix_is_valid,
     navsatfix_to_local_position,
     odometry_to_measurement,
     quaternion_to_yaw,
@@ -65,6 +59,26 @@ def test_navsatfix_to_local_position_uses_equirectangular_enu_projection() -> No
 
     assert position.shape == (3,)
     np.testing.assert_allclose(position, [19.26, 11.12, 3.5], atol=0.15)
+
+
+def test_navsatfix_to_local_position_rejects_invalid_coordinates() -> None:
+    reference = SimpleNamespace(latitude=30.0, longitude=114.0, altitude=20.0)
+    invalid_fix = SimpleNamespace(latitude=91.0, longitude=114.0, altitude=23.5)
+
+    with pytest.raises(ValueError, match="latitude"):
+        navsatfix_to_local_position(invalid_fix, reference)
+
+
+def test_navsatfix_is_valid_rejects_no_fix_and_nan() -> None:
+    no_fix = SimpleNamespace(
+        status=SimpleNamespace(status=-1), latitude=30.0, longitude=114.0, altitude=20.0
+    )
+    nan_fix = SimpleNamespace(
+        status=SimpleNamespace(status=0), latitude=float("nan"), longitude=114.0, altitude=20.0
+    )
+
+    assert navsatfix_is_valid(no_fix) is False
+    assert navsatfix_is_valid(nan_fix) is False
 
 
 def test_wheel_speed_to_velocity_accepts_joint_state_angular_velocity() -> None:

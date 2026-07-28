@@ -8,6 +8,7 @@ from .bridge import (
     Ros2UnavailableError,
     imu_to_measurement,
     measurement_to_odometry,
+    navsatfix_is_valid,
     navsatfix_to_local_position,
     odometry_to_measurement,
     wheel_speed_to_velocity,
@@ -56,6 +57,7 @@ if ROS2_AVAILABLE:
             self._gnss_reference: NavSatFix | None = None
             self._last_gnss: np.ndarray | None = None
             self._last_wheel_speed: float | None = None
+            self._invalid_gnss_count = 0
 
             self._publisher = self.create_publisher(Odometry, output_topic, 10)
             self._diagnostics_publisher = self.create_publisher(DiagnosticArray, diagnostics_topic, 10)
@@ -68,6 +70,10 @@ if ROS2_AVAILABLE:
             self._last_imu = imu_to_measurement(message)
 
         def _on_gnss(self, message: NavSatFix) -> None:
+            if not navsatfix_is_valid(message):
+                self._invalid_gnss_count += 1
+                self.get_logger().warning("ignoring invalid GNSS fix")
+                return
             if self._gnss_reference is None:
                 self._gnss_reference = message
             self._last_gnss = navsatfix_to_local_position(message, self._gnss_reference)
@@ -103,6 +109,12 @@ if ROS2_AVAILABLE:
                 status.level = DiagnosticStatus.OK
                 status.message = "IMU stream healthy"
                 status.values.append(KeyValue(key="yaw_rate", value=f"{self._last_imu[3]:.6f}"))
+            if self._invalid_gnss_count:
+                status.level = max(status.level, DiagnosticStatus.WARN)
+                status.message = "invalid GNSS fixes observed"
+                status.values.append(
+                    KeyValue(key="invalid_gnss_count", value=str(self._invalid_gnss_count))
+                )
             if self._last_gnss is not None:
                 status.values.append(KeyValue(key="gnss_east_m", value=f"{self._last_gnss[0]:.3f}"))
             if self._last_wheel_speed is not None:

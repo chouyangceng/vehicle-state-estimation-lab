@@ -93,12 +93,33 @@ def navsatfix_to_local_position(msg: object, reference: object) -> np.ndarray:
         ],
         "NavSatFix measurement",
     )
+    if not -90.0 <= values[0] <= 90.0 or not -90.0 <= values[3] <= 90.0:
+        raise ValueError("latitude must be within [-90, 90] degrees")
+    if not -180.0 <= values[1] <= 180.0 or not -180.0 <= values[4] <= 180.0:
+        raise ValueError("longitude must be within [-180, 180] degrees")
     earth_radius = 6_378_137.0
     mean_latitude = np.deg2rad((values[0] + values[3]) * 0.5)
     east = np.deg2rad(values[1] - values[4]) * np.cos(mean_latitude) * earth_radius
     north = np.deg2rad(values[0] - values[3]) * earth_radius
     up = values[2] - values[5]
     return np.array([east, north, up], dtype=float)
+
+
+def navsatfix_is_valid(msg: object) -> bool:
+    """Return whether a NavSatFix has a usable fix and finite coordinates."""
+
+    try:
+        status = getattr(msg.status, "status", 0)  # type: ignore[attr-defined]
+        if int(status) < 0:
+            return False
+        latitude = float(msg.latitude)  # type: ignore[attr-defined]
+        longitude = float(msg.longitude)  # type: ignore[attr-defined]
+        altitude = float(msg.altitude)  # type: ignore[attr-defined]
+        if not np.all(np.isfinite([latitude, longitude, altitude])):
+            return False
+        return -90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0
+    except (AttributeError, TypeError, ValueError):
+        return False
 
 
 def wheel_speed_to_velocity(msg: object, *, wheel_radius: float = 0.3) -> float:
