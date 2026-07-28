@@ -15,6 +15,12 @@
     python -m pytest -q
     python -m ruff check .
 
+## 高级基准实验
+
+    python examples/advanced_benchmark.py
+
+高级示例会运行可复现车辆传感器仿真、在线附着系数估计、GNSS 失效注入和 Monte Carlo 统计。新增模块包括 `simulation/vehicle_simulator.py`、`simulation/faults.py`、`estimators/friction.py`、`filters/imm.py` 和 `metrics/monte_carlo.py`。
+
 核心代码位于 `src/vehicle_state_estimation/`。`models` 保存车辆和轮胎模型，`filters` 保存 EKF/UKF，`simulation` 提供噪声、延迟、丢包和偏置故障，`metrics` 提供 RMSE/NIS/NEES。
 
 ## 研究问题
@@ -23,6 +29,8 @@
 - 为什么横向速度和质心侧偏角难以直接测量？
 - 传感器漂移、延迟和失锁如何影响状态估计？
 - 如何用一致性指标判断滤波器是否过度自信？
+- 多模型概率如何在直线、转弯和低附着工况之间切换？
+- 单次实验结果与 Monte Carlo 均值、标准差和 P95 有什么区别？
 
 ## 可选扩展
 

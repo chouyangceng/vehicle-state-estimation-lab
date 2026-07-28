@@ -1,0 +1,14 @@
+simulation:
+  steps: 400
+  dt: 0.02
+  seed: 21
+  imu_noise: 0.02
+  wheel_noise: 0.04
+friction_estimator:
+  initial: 0.9
+  learning_rate: 0.15
+  minimum: 0.1
+  maximum: 1.2
+monte_carlo:
+  trials: 30
+  steps: 200
