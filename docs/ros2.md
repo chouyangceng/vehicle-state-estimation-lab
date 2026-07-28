@@ -50,8 +50,8 @@ ros2 launch vehicle_state_estimation_ros estimator.launch.py
 - 状态向量为 `[vx, vy, yaw_rate, x, y, yaw]`，单位分别为 m/s、rad/s、m 和 rad。
 - 该节点用于算法验证和消息链路演示；真实车辆部署前应根据车辆标定结果重新设置
   协方差、坐标系和时间同步策略。
-- 核心项目要求 Python 3.11 或更高版本；ROS 2 Humble/Iron 的 Python 环境应满足该
-  版本要求，或在独立虚拟环境中安装核心包后再构建 ROS 2 工作空间。
+- 核心项目支持 Python 3.10 或更高版本，可直接适配 ROS 2 Humble/Iron 常见的
+  Python 3.10 环境；CI 会同时在 Python 3.10 和 3.11 上运行测试。
 - 发布器和订阅器使用深度为 10 的默认可靠 QoS，适合本地实验；跨主机或高丢包链路
   可在后续实验中改为 sensor-data QoS，并确保输入消息的 `header.stamp` 来自同一时钟。
 

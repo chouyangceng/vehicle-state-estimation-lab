@@ -46,6 +46,9 @@ Apache-2.0
 
 ## ROS 2 接口
 
+核心算法支持 Python 3.10 及以上版本，并在 Python 3.10/3.11 上持续集成测试，
+可直接用于 ROS 2 Humble/Iron 常见的 Python 3.10 环境。
+
 项目包含可选的 ROS 2 Python 包：`ros2/vehicle_state_estimation_ros`。它提供
 `sensor_msgs/Imu`、`sensor_msgs/NavSatFix`、`sensor_msgs/JointState`、
 `nav_msgs/Odometry` 和 `diagnostic_msgs/DiagnosticArray` 的标准消息接口，以及
