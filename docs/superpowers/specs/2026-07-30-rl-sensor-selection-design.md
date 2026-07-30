@@ -76,11 +76,12 @@ DQN 不在本阶段实现。只有当连续状态实验表明离散化成为主�
 
 \[
 P^-_t = P_{t-1} + Q\Delta t,\qquad
-\Lambda_t = (P^-_t)^{-1} + \sum_{s\in a_t} H_{s,t}^{\mathsf T}R_s^{-1}H_{s,t},\qquad
+J_t = \sum_{s\in a_t} H_{s,t}^{\mathsf T}R_s^{-1}H_{s,t},\qquad
+\Lambda_t = (P^-_t)^{-1} + J_t,\qquad
 P_t = \operatorname{bounded\_inverse}(\Lambda_t).
 \]
 
-`bounded_inverse` 在可观测特征方向使用特征值倒数，在零空间方向使用配置的危险方差上限，仅作为有限的训练代理。实现同时保留未经填充的有效秩和零空间掩码；若信息矩阵秩不足，该步必须标记为不可观测，不能因为代理协方差有限就误报为真实可观测。矩阵运算还使用对称化和有限值检查保持数值稳定。
+`bounded_inverse` 在后验精度的有效特征方向使用特征值倒数，在数值零空间方向使用配置的危险方差上限，仅作为有限的训练代理。当前窗口是否可观测必须由纯传感器信息矩阵 `J_t` 的有效秩判断，不能用包含先验的 `\Lambda_t` 判定；否则一个满秩先验会掩盖当前传感器组合缺少观测方向的问题。实现同时保留 `J_t` 的有效秩和零空间掩码，不能因为代理协方差有限就误报为真实可观测。矩阵运算还使用对称化和有限值检查保持数值稳定。
 
 ### 4.5 成本与奖励
 
@@ -88,7 +89,7 @@ P_t = \operatorname{bounded\_inverse}(\Lambda_t).
 
 \[
 r_t = -w_u\,U(P_t) - w_c\,C(a_t) - w_s\,\mathbf{1}[a_t\ne a_{t-1}]
-      + w_i\,G_t - w_o\,\mathbf{1}[\operatorname{rank}(\Lambda_t)<n],
+      + w_i\,G_t - w_o\,\mathbf{1}[\operatorname{rank}(J_t)<n],
 \]
 
 其中 `U` 是归一化不确定度，`C` 是传感器成本，`G` 是相对上一步的信息增益。各项先归一化再加权，CLI 报告每个奖励分量，防止只展示总回报而无法解释策略行为。
