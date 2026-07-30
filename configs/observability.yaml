@@ -1,0 +1,22 @@
+# Reproducible defaults for experiments/observability_study.py.
+seed: 7
+finite_difference_step: 0.00001
+covariance_floor: 0.000000001
+regularization: 0.000000001
+low_speed_threshold: 0.5
+condition_limit: 10000000000.0
+baseline: imu
+maneuvers:
+  - straight
+  - sine_steer
+  - double_lane_change
+  - low_friction_switch
+sensor_suites:
+  - name: imu
+    sensors: [imu]
+  - name: wheel_speed
+    sensors: [wheel_speed]
+  - name: gnss
+    sensors: [gnss]
+  - name: all
+    sensors: [imu, wheel_speed, gnss]
