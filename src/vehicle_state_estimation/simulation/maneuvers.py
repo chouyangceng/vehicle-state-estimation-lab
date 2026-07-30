@@ -42,8 +42,12 @@ class ManeuverConfig:
         allowed = {"straight", "sine_steer", "double_lane_change", "low_friction_switch"}
         if self.kind not in allowed:
             raise ValueError(f"kind must be one of {sorted(allowed)}")
-        if self.steps < 2 or not np.isfinite(self.dt) or self.dt <= 0:
-            raise ValueError("steps must be at least 2 and dt must be positive")
+        if not isinstance(self.steps, int) or isinstance(self.steps, bool) or self.steps < 2:
+            raise ValueError("steps must be an integer of at least 2")
+        if not np.isfinite(self.dt) or self.dt <= 0 or self.dt > 0.25:
+            raise ValueError("dt must be finite, positive, and no greater than 0.25 s")
+        if not np.isfinite(self.acceleration) or abs(self.acceleration) > 50.0:
+            raise ValueError("acceleration must be finite and bounded by 50 m/s^2")
         for name in ("speed", "steering_amplitude", "friction", "low_friction", "wheelbase", "wheel_radius"):
             value = float(getattr(self, name))
             if not np.isfinite(value) or value <= 0:

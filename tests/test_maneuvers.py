@@ -60,3 +60,13 @@ def test_invalid_maneuver_kind_is_rejected(kind: str) -> None:
     with pytest.raises(ValueError, match="kind"):
         ManeuverConfig(kind=kind)
 
+
+@pytest.mark.parametrize("acceleration", [float("nan"), float("inf"), -float("inf")])
+def test_non_finite_acceleration_is_rejected(acceleration: float) -> None:
+    with pytest.raises(ValueError, match="acceleration"):
+        ManeuverConfig(acceleration=acceleration)
+
+
+def test_unreasonably_large_step_is_rejected_before_integration() -> None:
+    with pytest.raises(ValueError, match="dt"):
+        ManeuverConfig(dt=1.0)
