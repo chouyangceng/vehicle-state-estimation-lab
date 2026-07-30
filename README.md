@@ -44,6 +44,16 @@
 
 Apache-2.0
 
+## 可观测性传感器消融研究
+
+`experiments/observability_study.py` 将直线、正弦转向、双移线、低附着切换四类工况与 IMU、轮速、GNSS、全传感器组合进行可复现实验，计算经验可观测 Gramian、有效秩、条件数、信息增益和 CRLB。
+
+```bash
+python experiments/observability_study.py --fast --seed 7
+```
+
+输出 `results.json`（严格 JSON）、`ranking.csv`、`observability.png` 和 `summary.md`。完整字段和假设见 [`docs/observability_study.md`](docs/observability_study.md)。
+
 ## ROS 2 接口
 
 核心算法支持 Python 3.10 及以上版本，并在 Python 3.10/3.11 上持续集成测试，
