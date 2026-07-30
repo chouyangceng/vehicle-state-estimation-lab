@@ -147,18 +147,41 @@ def generate_maneuver(config: ManeuverConfig | None = None) -> ManeuverTrace:
 def _check_trace(trace: ManeuverTrace) -> None:
     if not isinstance(trace, ManeuverTrace):
         raise TypeError("trace must be a ManeuverTrace")
-    if trace.state.ndim != 2 or trace.state.shape[1] != 4:
-        raise ValueError("trace state must have shape (N, 4)")
+    expected = {
+        "time": (trace.time, 1),
+        "state": (trace.state, 2),
+        "position": (trace.position, 2),
+        "steering": (trace.steering, 1),
+        "acceleration": (trace.acceleration, 1),
+        "friction": (trace.friction, 1),
+        "excitation_energy": (trace.excitation_energy, 1),
+    }
+    try:
+        sample_count = trace.state.shape[0]
+    except AttributeError as error:
+        raise ValueError("trace state must have shape (N, 4)") from error
+    for name, (value, ndim) in expected.items():
+        array = np.asarray(value)
+        if array.ndim != ndim:
+            raise ValueError(f"trace {name} must have {ndim} dimensions")
+        if name == "state" and array.shape[1] != 4:
+            raise ValueError("trace state must have shape (N, 4)")
+        if name == "position" and array.shape[1] != 2:
+            raise ValueError("trace position must have shape (N, 2)")
+        if array.shape[0] != sample_count:
+            raise ValueError(f"trace {name} length must match state")
+        if not np.all(np.isfinite(array)):
+            raise ValueError(f"trace {name} must contain only finite values")
 
 
 def imu_observation(trace: ManeuverTrace) -> tuple[FloatArray, FloatArray]:
     """Return ideal body IMU ``[a_x, a_y, yaw_rate]`` and covariance."""
 
     _check_trace(trace)
-    dt = trace.config.dt
-    ax = np.gradient(trace.state[:, 0], dt)
-    ay = np.gradient(trace.state[:, 1], dt) + trace.state[:, 0] * trace.state[:, 2]
-    values = np.column_stack((ax, ay, trace.state[:, 2]))
+    lateral_acceleration = (
+        0.18 * trace.state[:, 0] * trace.steering - trace.state[:, 1]
+    ) / 0.35 + trace.state[:, 0] * trace.state[:, 2]
+    values = np.column_stack((trace.acceleration, lateral_acceleration, trace.state[:, 2]))
     covariance = np.eye(3) * trace.config.imu_noise_std**2
     return values, covariance
 

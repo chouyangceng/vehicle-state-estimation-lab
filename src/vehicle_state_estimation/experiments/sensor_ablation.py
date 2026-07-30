@@ -26,7 +26,7 @@ from ..metrics.observability import (
     observability_report,
     regularized_condition_number,
 )
-from ..simulation.maneuvers import ManeuverTrace
+from ..simulation.maneuvers import ManeuverTrace, _check_trace
 
 FloatArray = NDArray[np.float64]
 SENSOR_ORDER = ("imu", "wheel_speed", "gnss")
@@ -83,6 +83,13 @@ class AblationResult:
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-compatible representation (including CRLB bounds)."""
 
+        crlb = []
+        crlb_unbounded = []
+        for value in np.asarray(self.crlb, dtype=float):
+            unbounded = not bool(np.isfinite(value))
+            crlb_unbounded.append(unbounded)
+            crlb.append(None if unbounded else float(value))
+
         return {
             "maneuver": self.maneuver,
             "suite": self.suite,
@@ -91,7 +98,8 @@ class AblationResult:
             "effective_rank": int(self.effective_rank),
             "condition_number": float(self.condition_number),
             "information_gain": float(self.information_gain),
-            "crlb": self.crlb.tolist(),
+            "crlb": crlb,
+            "crlb_unbounded": crlb_unbounded,
             "ill_conditioned": bool(self.ill_conditioned),
             "low_speed": bool(self.low_speed),
         }
@@ -101,7 +109,7 @@ class AblationResult:
 
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(self.to_dict(), indent=2, allow_nan=True), encoding="utf-8")
+        target.write_text(json.dumps(self.to_dict(), indent=2, allow_nan=False), encoding="utf-8")
         return target
 
     @staticmethod
@@ -111,7 +119,7 @@ class AblationResult:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
         payload = [result.to_dict() for result in results]
-        target.write_text(json.dumps(payload, indent=2, allow_nan=True), encoding="utf-8")
+        target.write_text(json.dumps(payload, indent=2, allow_nan=False), encoding="utf-8")
         return target
 
     @staticmethod
@@ -172,20 +180,82 @@ def _sort_suites(suites: Sequence[SensorSuite]) -> list[SensorSuite]:
     return list(suites)
 
 
-def _measurement_model(sensor: str, wheel_radius: float):
+def imu_measurement_model(
+    state: FloatArray,
+    *,
+    steering: float,
+    acceleration: float,
+    lateral_time_constant: float = 0.35,
+) -> FloatArray:
+    """Return the per-time ideal body IMU measurement used by manoeuvres."""
+
+    state = np.asarray(state, dtype=float)
+    if state.shape != (4,) or not np.all(np.isfinite(state)):
+        raise ValueError("state must be a finite vector with shape (4,)")
+    if not np.isfinite(steering) or not np.isfinite(acceleration):
+        raise ValueError("steering and acceleration must be finite")
+    if not np.isfinite(lateral_time_constant) or lateral_time_constant <= 0.0:
+        raise ValueError("lateral_time_constant must be finite and positive")
+    lateral_acceleration = (
+        0.18 * state[0] * steering - state[1]
+    ) / lateral_time_constant + state[0] * state[2]
+    return np.array([acceleration, lateral_acceleration, state[2]], dtype=float)
+
+
+def gnss_measurement_model(
+    state: FloatArray,
+    *,
+    position_offset: FloatArray,
+    dt: float,
+) -> FloatArray:
+    """Return a per-time world-frame GNSS position prediction.
+
+    ``position_offset`` is the known integration anchor for this sample.  The
+    vehicle velocity is rotated into the world frame before integration; the
+    measured quantity remains position, never rotated velocity.
+    """
+
+    state = np.asarray(state, dtype=float)
+    offset = np.asarray(position_offset, dtype=float)
+    if state.shape != (4,) or not np.all(np.isfinite(state)):
+        raise ValueError("state must be a finite vector with shape (4,)")
+    if offset.shape != (2,) or not np.all(np.isfinite(offset)):
+        raise ValueError("position_offset must be a finite vector with shape (2,)")
+    if not np.isfinite(dt) or dt <= 0.0:
+        raise ValueError("dt must be finite and positive")
+    yaw = state[3]
+    world_velocity = np.array(
+        [
+            state[0] * np.cos(yaw) - state[1] * np.sin(yaw),
+            state[0] * np.sin(yaw) + state[1] * np.cos(yaw),
+        ],
+        dtype=float,
+    )
+    return offset + float(dt) * world_velocity
+
+
+def _measurement_model(sensor: str, trace: ManeuverTrace, index: int):
     if sensor == "imu":
-        return lambda state: np.array(
-            [state[0], state[1] + state[0] * state[2], state[2]], dtype=float
+        return lambda state: imu_measurement_model(
+            state,
+            steering=trace.steering[index],
+            acceleration=trace.acceleration[index],
         )
     if sensor == "wheel_speed":
-        return lambda state: np.repeat(state[0] / wheel_radius, 4).astype(float)
+        return lambda state: np.repeat(state[0] / trace.config.wheel_radius, 4).astype(float)
     if sensor == "gnss":
-        return lambda state: np.array(
+        state = trace.state[index]
+        yaw = state[3]
+        world_velocity = np.array(
             [
-                state[0] * np.cos(state[3]) - state[1] * np.sin(state[3]),
-                state[0] * np.sin(state[3]) + state[1] * np.cos(state[3]),
+                state[0] * np.cos(yaw) - state[1] * np.sin(yaw),
+                state[0] * np.sin(yaw) + state[1] * np.cos(yaw),
             ],
             dtype=float,
+        )
+        position_offset = trace.position[index] - trace.config.dt * world_velocity
+        return lambda state: gnss_measurement_model(
+            state, position_offset=position_offset, dt=trace.config.dt
         )
     raise ValueError(f"unknown sensor: {sensor}")
 
@@ -231,14 +301,14 @@ def run_sensor_ablation(
     reproducible log-determinant difference against ``baseline``.
     """
 
-    if not isinstance(trace, ManeuverTrace):
-        raise TypeError("trace must be a ManeuverTrace")
+    _check_trace(trace)
     for value, name in ((finite_difference_step, "finite_difference_step"),
                         (covariance_floor, "covariance_floor"),
-                        (regularization, "regularization"),
                         (low_speed_threshold, "low_speed_threshold")):
         if not np.isfinite(value) or value < 0.0 or (name == "finite_difference_step" and value == 0.0):
             raise ValueError(f"{name} must be finite and non-negative")
+    if not np.isfinite(regularization) or regularization <= 0.0:
+        raise ValueError("regularization must be finite and positive")
     if not np.isfinite(condition_limit) or condition_limit <= 0.0:
         raise ValueError("condition_limit must be finite and positive")
     if suites is None:
@@ -255,12 +325,12 @@ def run_sensor_ablation(
     state_dimension = trace.state.shape[1]
     per_sensor: dict[str, tuple[list[FloatArray], FloatArray]] = {}
     for sensor in SENSOR_ORDER:
-        model = _measurement_model(sensor, trace.config.wheel_radius)
         covariance = _sensor_covariance(trace, sensor, covariance_floor)
-        per_sensor[sensor] = (
-            [finite_difference_jacobian(model, state, step=finite_difference_step) for state in trace.state],
-            covariance,
-        )
+        jacobians = []
+        for index, state in enumerate(trace.state):
+            model = _measurement_model(sensor, trace, index)
+            jacobians.append(finite_difference_jacobian(model, state, step=finite_difference_step))
+        per_sensor[sensor] = (jacobians, covariance)
 
     gramians: dict[str, FloatArray] = {}
     for suite in normalized:
@@ -299,8 +369,12 @@ def run_sensor_ablation(
                 condition_number=regularized_condition_number(
                     report.gramian, regularization=regularization
                 ),
-                information_gain=information_gain(
-                    report.gramian, baseline_gramian, regularization=regularization
+                information_gain=(
+                    0.0
+                    if suite.name == baseline_suite.name
+                    else information_gain(
+                        report.gramian, baseline_gramian, regularization=regularization
+                    )
                 ),
                 crlb=cramer_rao_lower_bound(report.gramian, regularization=regularization),
                 ill_conditioned=bool(report.ill_conditioned),
@@ -310,4 +384,11 @@ def run_sensor_ablation(
     return results
 
 
-__all__ = ["SENSOR_ORDER", "AblationResult", "SensorSuite", "run_sensor_ablation"]
+__all__ = [
+    "SENSOR_ORDER",
+    "AblationResult",
+    "SensorSuite",
+    "gnss_measurement_model",
+    "imu_measurement_model",
+    "run_sensor_ablation",
+]
