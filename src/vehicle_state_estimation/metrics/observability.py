@@ -44,11 +44,15 @@ def _symmetric_matrix(value: ArrayLike, *, name: str) -> FloatArray:
 
 def _positive_semidefinite(value: ArrayLike, *, name: str) -> FloatArray:
     matrix = _symmetric_matrix(value, name=name)
-    eigenvalues = np.linalg.eigvalsh(matrix)
+    eigenvalues, eigenvectors = np.linalg.eigh(matrix)
     tolerance = 1e-10 * max(1.0, float(np.max(np.abs(eigenvalues), initial=0.0)))
     if eigenvalues.min(initial=0.0) < -tolerance:
         raise ValueError(f"{name} must be positive semidefinite")
-    return matrix
+    # A covariance assembled from floating-point operations can acquire tiny
+    # negative eigenvalues.  Project only those tolerated directions to zero so
+    # the matrix passed to a pseudoinverse remains a valid PSD metric.
+    clipped = np.maximum(eigenvalues, 0.0)
+    return (eigenvectors * clipped) @ eigenvectors.T
 
 
 def _validate_non_negative(value: float, *, name: str) -> float:
@@ -176,6 +180,17 @@ def cramer_rao_lower_bound(
     regularized = matrix + regularization * np.eye(matrix.shape[0])
     covariance_bound = np.linalg.pinv(regularized)
     variances = np.maximum(np.diag(covariance_bound), 0.0)
+    # A ridge term stabilizes the numerical solve but does not create
+    # information.  Preserve the statistical meaning of an unobservable
+    # direction by reporting an infinite bound for exact null-space axes.
+    eigenvalues, eigenvectors = np.linalg.eigh(matrix)
+    null_tolerance = 100.0 * np.finfo(float).eps * max(
+        1.0, float(np.max(np.abs(eigenvalues), initial=0.0))
+    )
+    null_space = eigenvectors[:, eigenvalues <= null_tolerance]
+    if null_space.size:
+        unobservable = np.sum(null_space**2, axis=1) > 1e-12
+        variances[unobservable] = np.inf
     return np.sqrt(variances)
 
 

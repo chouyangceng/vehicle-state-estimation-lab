@@ -38,6 +38,19 @@ def test_empirical_gramian_is_symmetric_positive_semidefinite() -> None:
     assert np.linalg.eigvalsh(gramian).min() >= -1e-12
 
 
+def test_tiny_negative_covariance_eigenvalues_are_projected_to_zero() -> None:
+    gramian = empirical_observability_gramian(
+        [np.eye(2)], np.diag([-1e-12, 1.0])
+    )
+
+    np.testing.assert_allclose(gramian, np.diag([0.0, 1.0]), atol=1e-12)
+
+
+def test_materially_negative_covariance_eigenvalues_are_rejected() -> None:
+    with pytest.raises(ValueError, match="positive semidefinite"):
+        empirical_observability_gramian([np.eye(2)], np.diag([-1e-3, 1.0]))
+
+
 def test_effective_rank_uses_relative_eigenvalue_threshold() -> None:
     information = np.diag([10.0, 1.0, 1e-10])
 
@@ -66,7 +79,15 @@ def test_crlb_uses_pseudoinverse_and_returns_standard_deviation_bounds() -> None
 
     bounds = cramer_rao_lower_bound(information, regularization=0.0)
 
-    np.testing.assert_allclose(bounds, np.array([0.5, 1.0 / 3.0, 0.0]))
+    np.testing.assert_allclose(bounds[:2], np.array([0.5, 1.0 / 3.0]))
+    assert np.isinf(bounds[2])
+
+
+def test_crlb_keeps_exactly_unobservable_direction_infinite_with_regularization() -> None:
+    bounds = cramer_rao_lower_bound(np.diag([4.0, 0.0]), regularization=1e-6)
+
+    np.testing.assert_allclose(bounds[0], 0.5, rtol=1e-6)
+    assert np.isinf(bounds[1])
 
 
 @pytest.mark.parametrize(
