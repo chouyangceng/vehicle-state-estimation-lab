@@ -21,7 +21,9 @@ python experiments/observability_study.py \
   --output artifacts/observability-study
 ```
 
-`--fast` 使用较短轨迹，适合 CI 和开发；默认模式使用更长轨迹，适合记录结果。`--seed` 当前作为实验元数据保存，以便未来接入随机噪声和 Monte Carlo 时保持接口稳定。
+`--fast` 使用较短轨迹，适合 CI 和开发；默认模式使用更长轨迹，适合记录结果。`--seed` 当前只作为实验元数据保存（`seed_semantics=metadata_only_deterministic_replay`），用于标记可复现实验；当前确定性轨迹不依赖随机采样，未来接入随机噪声和 Monte Carlo 时可沿用该接口。
+
+配置文件使用项目内置的轻量 YAML 子集解析器，不依赖 PyYAML。解析器会自动去除 UTF-8 BOM，并对未知键、缩进/列表格式错误以及空的 `maneuvers` 或 `sensor_suites` 直接抛出带行号的 `ValueError`，避免静默回退到默认配置。
 
 ## 输出字段
 
@@ -33,7 +35,7 @@ python experiments/observability_study.py \
 - `crlb`、`crlb_unbounded`：逐状态 CRLB；不可观测方向使用 JSON `null`。
 - `ill_conditioned`、`low_speed`：安全提示标志。
 
-`ranking.csv` 用一个透明的启发式分数排序（有效秩、信息增益、条件数和有限 CRLB 的组合），仅用于选取值得深入分析的组合，不能替代统计检验。
+`ranking.csv` 用一个透明的启发式分数排序（有效秩、信息增益、条件数和 CRLB 的组合），仅用于选取值得深入分析的组合，不能替代统计检验。只要某个状态方向的 CRLB 不可界定（JSON 中为 `null`），该组合的分数就是 `-inf`，不会被误排在所有方向都有有限下界的组合之前。
 
 ## 假设与局限
 

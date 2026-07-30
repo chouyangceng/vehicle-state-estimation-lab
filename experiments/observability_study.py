@@ -83,50 +83,80 @@ def _read_config(path: str | Path | None) -> tuple[dict[str, Any], str]:
     if not candidate.exists():
         return config, "built-in defaults"
 
-    lines = [line.split("#", 1)[0].rstrip() for line in candidate.read_text(encoding="utf-8").splitlines()]
-    lines = [line for line in lines if line.strip()]
+    # ``utf-8-sig`` removes an optional UTF-8 BOM, which is common when a
+    # configuration is edited in Windows Notepad.  Keep source line numbers
+    # so malformed input can be fixed without guessing where it occurred.
+    raw_lines = candidate.read_text(encoding="utf-8-sig").splitlines()
+    lines = [(line.split("#", 1)[0].rstrip(), number) for number, line in enumerate(raw_lines, 1)]
+    lines = [(line, number) for line, number in lines if line.strip()]
+    allowed_keys = set(DEFAULT_CONFIG)
     index = 0
     while index < len(lines):
-        line = lines[index]
+        line, line_number = lines[index]
         match = re.match(r"^([A-Za-z_][\w-]*):(?:\s*(.*))?$", line)
         if not match:
-            index += 1
-            continue
+            raise ValueError(f"malformed config line {line_number}: {line.strip()!r}")
         key, raw = match.group(1), match.group(2) or ""
+        if key not in allowed_keys:
+            raise ValueError(f"unknown config key '{key}' on line {line_number}")
         if key == "sensor_suites" and not raw:
             suites: list[dict[str, Any]] = []
             index += 1
-            while index < len(lines) and lines[index].startswith("  "):
-                name_match = re.match(r"^\s*-\s*name:\s*(.+)$", lines[index])
+            while index < len(lines) and lines[index][0].startswith("  "):
+                nested, nested_number = lines[index]
+                name_match = re.match(r"^  -\s*name:\s*(.+)$", nested)
                 if not name_match:
-                    index += 1
-                    continue
+                    raise ValueError(f"malformed config line {nested_number}: {nested.strip()!r}")
                 suite = {"name": str(_scalar(name_match.group(1)))}
                 index += 1
-                if index < len(lines):
-                    sensor_match = re.match(r"^\s+sensors:\s*(.+)$", lines[index])
-                    if sensor_match:
-                        suite["sensors"] = _scalar(sensor_match.group(1))
-                        index += 1
+                if index >= len(lines) or not re.match(r"^    sensors:\s*(.+)$", lines[index][0]):
+                    missing_number = lines[index][1] if index < len(lines) else nested_number
+                    raise ValueError(f"sensor suite at line {nested_number} requires sensors (near line {missing_number})")
+                sensor_match = re.match(r"^    sensors:\s*(.+)$", lines[index][0])
+                assert sensor_match is not None
+                suite["sensors"] = _scalar(sensor_match.group(1))
+                index += 1
                 suites.append(suite)
-            if suites:
-                config[key] = suites
+            if not suites:
+                raise ValueError("sensor_suites must contain at least one suite")
+            config[key] = suites
             continue
         if key in {"maneuvers", "sensor_suites"} and not raw:
             values: list[Any] = []
             index += 1
-            while index < len(lines) and lines[index].startswith("  "):
-                item = lines[index].strip()
+            while index < len(lines) and lines[index][0].startswith("  "):
+                item, item_number = lines[index]
+                item = item.strip()
                 if item.startswith("-"):
                     values.append(_scalar(item[1:].strip()))
+                else:
+                    raise ValueError(f"malformed config line {item_number}: {item!r}")
                 index += 1
-            if values:
-                config[key] = values
+            if not values:
+                raise ValueError(f"{key} must contain at least one item")
+            config[key] = values
             continue
         if raw:
             config[key] = _scalar(raw)
         index += 1
+    _validate_config(config)
     return config, str(candidate)
+
+
+def _validate_config(config: dict[str, Any]) -> None:
+    """Validate the subset consumed by the study before starting simulation."""
+
+    maneuvers = config.get("maneuvers")
+    if not isinstance(maneuvers, list) or not maneuvers:
+        raise ValueError("maneuvers must contain at least one item")
+    if any(not isinstance(item, str) or not item.strip() for item in maneuvers):
+        raise ValueError("maneuvers must contain non-empty names")
+
+    suites = config.get("sensor_suites")
+    if not isinstance(suites, list) or not suites:
+        raise ValueError("sensor_suites must contain at least one suite")
+    if any(not isinstance(item, dict) for item in suites):
+        raise ValueError("sensor_suites must contain mappings")
 
 
 def _strict(value: Any) -> Any:
@@ -144,10 +174,12 @@ def _strict(value: Any) -> Any:
 def _write_ranking(results: list[dict[str, Any]], path: Path) -> None:
     rows = []
     for item in results:
-        bounds = [float(value) for value in item["crlb"] if value is not None]
+        crlb_values = list(item["crlb"])
+        has_unbounded_crlb = any(value is None or not np.isfinite(float(value)) for value in crlb_values)
+        bounds = [float(value) for value in crlb_values if value is not None and np.isfinite(float(value))]
         mean_crlb = float(np.mean(bounds)) if bounds else None
         # Higher rank/gain and lower uncertainty/conditioning are desirable.
-        score = (
+        score = float("-inf") if has_unbounded_crlb else (
             10.0 * item["effective_rank"]
             + item["information_gain"]
             - np.log10(max(item["condition_number"], 1.0))
@@ -263,6 +295,7 @@ def run_study(
     output.mkdir(parents=True, exist_ok=True)
     metadata = {
         "seed": seed_value,
+        "seed_semantics": "metadata_only_deterministic_replay",
         "fast": bool(fast),
         "config_source": source,
         "maneuvers": maneuvers,
@@ -283,7 +316,12 @@ def main(argv: list[str] | None = None) -> Path:
     parser = argparse.ArgumentParser(description="Run the vehicle observability sensor-ablation study")
     parser.add_argument("--config", default=None, help="YAML config path (optional)")
     parser.add_argument("--output", default="artifacts/observability-study")
-    parser.add_argument("--seed", type=int, default=None)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="deterministic seed recorded as experiment metadata (reserved for future stochastic noise)",
+    )
     parser.add_argument("--fast", action="store_true", help="use shorter traces for smoke tests")
     args = parser.parse_args(argv)
     output = run_study(config_path=args.config, output_dir=args.output, seed=args.seed, fast=args.fast)
