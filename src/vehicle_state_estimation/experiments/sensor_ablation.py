@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import csv
 import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 import numpy as np
-from numpy.typing import ArrayLike, NDArray
+from numpy.typing import NDArray
 
 from ..metrics.observability import (
     cramer_rao_lower_bound,
@@ -104,7 +105,7 @@ class AblationResult:
         return target
 
     @staticmethod
-    def write_json(results: Sequence["AblationResult"], path: str | Path) -> Path:
+    def write_json(results: Sequence[AblationResult], path: str | Path) -> Path:
         """Write a list of results as one JSON array."""
 
         target = Path(path)
@@ -114,7 +115,7 @@ class AblationResult:
         return target
 
     @staticmethod
-    def write_csv(results: Sequence["AblationResult"], path: str | Path) -> Path:
+    def write_csv(results: Sequence[AblationResult], path: str | Path) -> Path:
         """Write compact scalar metrics for ranking and plotting tools."""
 
         target = Path(path)
@@ -166,8 +167,9 @@ def _coerce_suite(value: SensorSuite | str | Mapping[str, Any]) -> SensorSuite:
 
 
 def _sort_suites(suites: Sequence[SensorSuite]) -> list[SensorSuite]:
-    order = {sensor: index for index, sensor in enumerate(SENSOR_ORDER)}
-    return sorted(suites, key=lambda suite: (tuple(order[item] for item in suite.sensors), suite.name))
+    # Preserve the caller/configuration order; validation and sensor tuple
+    # normalization already make repeated runs deterministic.
+    return list(suites)
 
 
 def _measurement_model(sensor: str, wheel_radius: float):
@@ -308,4 +310,4 @@ def run_sensor_ablation(
     return results
 
 
-__all__ = ["AblationResult", "SENSOR_ORDER", "SensorSuite", "run_sensor_ablation"]
+__all__ = ["SENSOR_ORDER", "AblationResult", "SensorSuite", "run_sensor_ablation"]
