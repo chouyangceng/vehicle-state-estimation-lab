@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from vehicle_state_estimation.rl import QLearningAgent, StateDiscretizer
@@ -34,3 +35,21 @@ def test_greedy_ties_are_stable_and_seeded_exploration_is_reproducible():
     assert [first.select_action(0, epsilon=1.0) for _ in range(8)] == [
         second.select_action(0, epsilon=1.0) for _ in range(8)
     ]
+
+
+def test_policy_payload_round_trip_and_validation():
+    agent = QLearningAgent(3, 2, learning_rate=0.2, discount=0.8)
+    agent.q_table[:] = [[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]
+    payload = agent.to_policy_dict(metadata={"seed": 7, "purpose": "unit-test"})
+    restored = QLearningAgent.from_policy_dict(payload)
+    np.testing.assert_array_equal(restored.q_table, agent.q_table)
+    assert restored.learning_rate == 0.2
+    assert restored.discount == 0.8
+    assert payload["metadata"]["seed"] == 7
+
+    broken = {**payload, "format_version": 99}
+    with pytest.raises(ValueError, match="format_version"):
+        QLearningAgent.from_policy_dict(broken)
+    broken = {**payload, "q_table": [[1.0, float("nan")], [3.0, 4.0], [5.0, 6.0]]}
+    with pytest.raises(ValueError, match="finite"):
+        QLearningAgent.from_policy_dict(broken)

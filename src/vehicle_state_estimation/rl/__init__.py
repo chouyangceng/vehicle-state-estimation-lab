@@ -1,6 +1,6 @@
 """Interpretable reinforcement-learning primitives for sensor selection."""
 
-from .baselines import AlwaysAllPolicy, LowestCostPolicy, RandomPolicy
+from .baselines import AlwaysAllPolicy, GreedyInformationPolicy, LowestCostPolicy, RandomPolicy
 from .discretization import StateDiscretizer
 from .environment import ACTION_MASKS, SENSOR_NAMES, RewardWeights, SensorSelectionEnv
 from .evaluation import evaluate_policy, train_q_learning
@@ -10,6 +10,7 @@ __all__ = [
     "ACTION_MASKS",
     "SENSOR_NAMES",
     "AlwaysAllPolicy",
+    "GreedyInformationPolicy",
     "LowestCostPolicy",
     "QLearningAgent",
     "RandomPolicy",

@@ -97,6 +97,40 @@ class SensorSelectionEnv:
     def horizon(self) -> int:
         return int(self._speeds.size)
 
+    def greedy_information_action(self, cost_weight: float = 0.05) -> int:
+        """Choose the available action with the best one-step information score."""
+
+        if self._terminated:
+            raise RuntimeError("episode has terminated; call reset before selecting an action")
+        if not np.isfinite(cost_weight) or cost_weight < 0:
+            raise ValueError("cost_weight must be finite and non-negative")
+        health_mask = int(self._health_masks[self._step])
+        if health_mask == 0:
+            return 6  # Any request reaches the environment's explicit safe termination.
+        best_action = 0
+        best_score = float("-inf")
+        identity = np.eye(self._covariance.shape[0])
+        total_cost = max(float(np.sum(self._sensor_costs)), 1e-12)
+        for action, mask in enumerate(ACTION_MASKS):
+            if mask & health_mask != mask:
+                continue
+            information = sum(
+                (
+                    self._information[self._step, sensor]
+                    for sensor in range(3)
+                    if mask & (1 << sensor)
+                ),
+                start=np.zeros_like(self._covariance),
+            )
+            _, log_information = np.linalg.slogdet(identity + information)
+            normalized_cost = sum(
+                self._sensor_costs[sensor] for sensor in range(3) if mask & (1 << sensor)
+            ) / total_cost
+            score = float(log_information - cost_weight * normalized_cost)
+            if score > best_score:
+                best_action, best_score = action, score
+        return best_action
+
     def reset(self) -> tuple[int, dict[str, Any]]:
         self._step = 0
         self._covariance = self._initial_covariance.copy()

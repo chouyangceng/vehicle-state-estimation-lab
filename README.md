@@ -23,9 +23,15 @@
 
 核心代码位于 `src/vehicle_state_estimation/`。`models` 保存车辆和轮胎模型，`filters` 保存 EKF/UKF，`simulation` 提供噪声、延迟、丢包和偏置故障，`metrics` 提供 RMSE/NIS/NEES。
 
-## 自适应传感器选择：阶段 1
+## 自适应传感器选择研究
 
-`rl/` 已实现纯 NumPy、可解释的传感器选择策略核心：默认离散状态为速度 × 横向激励 × 不确定度 × 健康掩码 × 上一动作，共 2304 个状态；`QLearningAgent` 提供带种子的 epsilon-greedy 探索、Bellman 更新和确定性并列决策。本阶段只交付经过测试的分箱与学习内核，尚不把它描述为完成了环境训练或实车部署。
+`rl/` 提供纯 NumPy、可解释的 Q-learning 研究闭环：2304 个透明离散状态、七种 IMU/轮速/GNSS 组合、故障感知回退、纯传感器信息秩、逐项奖励、确定性训练和版本化策略导出。运行：
+
+```bash
+python experiments/rl_sensor_selection.py --fast --seed 7
+```
+
+实验会将学习策略与全传感器、最低成本、随机和单步信息贪心策略放在相同工况与故障调度下比较，并生成训练曲线、成本—不确定度图、动作占比、CSV、严格 JSON 和中文结论。方法、指标边界与产物说明见 [`docs/rl_sensor_selection.md`](docs/rl_sensor_selection.md)。结果来自低阶仿真，不表述为实车部署结论。
 
 ## 研究问题
 

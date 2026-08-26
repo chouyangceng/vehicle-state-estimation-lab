@@ -10,7 +10,7 @@ from .environment import SensorSelectionEnv
 from .q_learning import QLearningAgent
 
 EnvironmentFactory = Callable[[int], SensorSelectionEnv]
-Policy = Callable[[int], int]
+Policy = Callable[[int, SensorSelectionEnv], int]
 
 
 def train_q_learning(
@@ -105,7 +105,7 @@ def evaluate_policy(
         terminated = False
         episode_return = 0.0
         while not terminated:
-            action = policy(state)
+            action = policy(state, environment)
             state, reward, terminated, info = environment.step(action)
             episode_return += reward
             uncertainties.append(float(info["normalized_uncertainty"]))

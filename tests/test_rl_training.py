@@ -2,6 +2,7 @@ import numpy as np
 
 from vehicle_state_estimation.rl import (
     AlwaysAllPolicy,
+    GreedyInformationPolicy,
     LowestCostPolicy,
     RandomPolicy,
     SensorSelectionEnv,
@@ -62,3 +63,8 @@ def test_baselines_are_deterministic_or_seed_reproducible():
     first = RandomPolicy(seed=8)
     second = RandomPolicy(seed=8)
     assert [first(0) for _ in range(10)] == [second(999) for _ in range(10)]
+    environment = _factory(1)
+    environment.reset()
+    greedy_action = GreedyInformationPolicy()(0, environment)
+    assert 0 <= greedy_action < 7
+    assert environment.greedy_information_action() == greedy_action
