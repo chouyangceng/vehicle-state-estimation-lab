@@ -31,7 +31,7 @@
 python experiments/rl_sensor_selection.py --fast --seed 7
 ```
 
-实验会将学习策略与全传感器、最低成本、随机和单步信息贪心策略放在相同工况与故障调度下比较，并生成训练曲线、成本—不确定度图、动作占比、CSV、严格 JSON 和中文结论。方法、指标边界与产物说明见 [`docs/rl_sensor_selection.md`](docs/rl_sensor_selection.md)。结果来自低阶仿真，不表述为实车部署结论。
+实验会将学习策略与全传感器、最低成本、随机和单步信息贪心策略放在相同工况与故障调度下比较，并生成训练曲线、带 95% episode 区间的成本—不确定度图、配对策略差异、动作占比、CSV、严格 JSON 和中文结论。方法、指标边界与产物说明见 [`docs/rl_sensor_selection.md`](docs/rl_sensor_selection.md)。结果来自低阶仿真，不表述为实车部署结论。
 
 ## 研究问题
 

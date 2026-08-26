@@ -55,6 +55,11 @@ def test_evaluation_reports_cost_uncertainty_observability_and_fallbacks():
         "uncertainty",
         "unobservable",
     }
+    assert len(result["episode_metrics"]) == 3
+    assert np.isclose(
+        np.mean([item["mean_uncertainty"] for item in result["episode_metrics"]]),
+        result["mean_uncertainty"],
+    )
 
 
 def test_baselines_are_deterministic_or_seed_reproducible():

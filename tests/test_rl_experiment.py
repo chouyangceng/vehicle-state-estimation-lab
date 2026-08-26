@@ -27,6 +27,7 @@ def test_fast_rl_study_generates_strict_complete_artifacts(tmp_path: Path):
         "training_history.csv",
         "evaluation.json",
         "policy_comparison.csv",
+        "paired_comparison.csv",
         "training_curve.png",
         "tradeoff.png",
         "action_usage.png",
@@ -45,6 +46,10 @@ def test_fast_rl_study_generates_strict_complete_artifacts(tmp_path: Path):
         "random",
         "greedy_information",
     }
+    assert set(evaluation["paired_comparisons"]) == {
+        "always_all", "lowest_cost", "random", "greedy_information"
+    }
+    assert evaluation["paired_comparisons"]["always_all"]["mean_sensor_cost"]["ci95_low"] < 0
     summary = (output / "summary.md").read_text(encoding="utf-8")
     assert "指标边界" in summary
     assert "不能替代道路和硬件在环试验" in summary

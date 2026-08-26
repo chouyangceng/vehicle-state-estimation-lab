@@ -69,6 +69,7 @@ def run_study(
         name: evaluate_policy(factory, policy, episodes=evaluation_episodes)
         for name, policy in policies.items()
     }
+    paired_comparisons = _paired_comparisons(evaluations)
     metadata = {
         "seed": seed,
         "fast": fast,
@@ -87,13 +88,17 @@ def run_study(
     }
     policy_payload = agent.to_policy_dict(metadata=metadata)
     _write_json(output / "policy.json", policy_payload)
-    _write_json(output / "evaluation.json", {"metadata": metadata, "policies": evaluations})
+    _write_json(
+        output / "evaluation.json",
+        {"metadata": metadata, "policies": evaluations, "paired_comparisons": paired_comparisons},
+    )
     _write_history(output / "training_history.csv", history)
     _write_comparison(output / "policy_comparison.csv", evaluations)
+    _write_paired_comparison(output / "paired_comparison.csv", paired_comparisons)
     _write_training_plot(output / "training_curve.png", history)
     _write_tradeoff_plot(output / "tradeoff.png", evaluations)
     _write_action_plot(output / "action_usage.png", evaluations)
-    _write_summary(output / "summary.md", metadata, evaluations)
+    _write_summary(output / "summary.md", metadata, evaluations, paired_comparisons)
     return output
 
 
@@ -141,6 +146,47 @@ def _write_comparison(path: Path, evaluations: dict[str, dict[str, Any]]) -> Non
             )
 
 
+def _mean_ci(values: np.ndarray) -> dict[str, float]:
+    """Normal-approximation interval for paired episode differences."""
+    mean = float(np.mean(values))
+    half_width = (
+        1.96 * float(np.std(values, ddof=1)) / np.sqrt(values.size)
+        if values.size > 1
+        else 0.0
+    )
+    return {"mean": mean, "ci95_low": mean - half_width, "ci95_high": mean + half_width}
+
+
+def _paired_comparisons(evaluations: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    learned = evaluations["q_learning"]["episode_metrics"]
+    result = {}
+    for name, evaluation in evaluations.items():
+        if name == "q_learning":
+            continue
+        baseline = evaluation["episode_metrics"]
+        if len(learned) != len(baseline):
+            raise ValueError("paired policy evaluation requires matching episodes")
+        result[name] = {}
+        for metric in ("return", "mean_uncertainty", "mean_sensor_cost"):
+            differences = np.asarray(
+                [left[metric] - right[metric] for left, right in zip(learned, baseline, strict=True)],
+                dtype=float,
+            )
+            result[name][metric] = _mean_ci(differences)
+    return result
+
+
+def _write_paired_comparison(path: Path, comparisons: dict[str, Any]) -> None:
+    with path.open("w", newline="", encoding="utf-8") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(("baseline", "metric", "mean_delta", "ci95_low", "ci95_high"))
+        for baseline, metrics in comparisons.items():
+            for metric, interval in metrics.items():
+                writer.writerow(
+                    (baseline, metric, interval["mean"], interval["ci95_low"], interval["ci95_high"])
+                )
+
+
 def _write_training_plot(path: Path, history: list[dict[str, float | int]]) -> None:
     import matplotlib
 
@@ -183,19 +229,30 @@ def _write_tradeoff_plot(path: Path, evaluations: dict[str, dict[str, Any]]) -> 
 
     figure, axis = plt.subplots(figsize=(7.5, 5.5))
     offsets = {
-        "q_learning": (8, 8),
-        "always_all": (-92, -18),
+        "q_learning": (-55, -18),
+        "always_all": (-95, -30),
         "lowest_cost": (8, 5),
         "random": (8, 8),
-        "greedy_information": (-38, 12),
+        "greedy_information": (-38, 28),
     }
     markers = ("o", "s", "^", "D", "P")
     for marker, (name, result) in zip(markers, evaluations.items(), strict=True):
-        axis.scatter(
+        episode_metrics = result["episode_metrics"]
+        cost_values = np.asarray([item["mean_sensor_cost"] for item in episode_metrics])
+        uncertainty_values = np.asarray([item["mean_uncertainty"] for item in episode_metrics])
+        cost_error = 1.96 * np.std(cost_values, ddof=1) / np.sqrt(cost_values.size)
+        uncertainty_error = 1.96 * np.std(uncertainty_values, ddof=1) / np.sqrt(
+            uncertainty_values.size
+        )
+        axis.errorbar(
             result["mean_sensor_cost"],
             result["mean_uncertainty"],
-            s=82,
+            xerr=cost_error,
+            yerr=uncertainty_error,
             marker=marker,
+            markersize=9,
+            capsize=3,
+            linestyle="none",
             label=name,
         )
         axis.annotate(
@@ -246,6 +303,7 @@ def _write_summary(
     path: Path,
     metadata: dict[str, Any],
     evaluations: dict[str, dict[str, Any]],
+    paired_comparisons: dict[str, Any],
 ) -> None:
     learned = evaluations["q_learning"]
     baseline = evaluations["always_all"]
@@ -265,6 +323,17 @@ def _write_summary(
         f"| {name} | {result['mean_return']:.3f} | {result['mean_sensor_cost']:.3f} | {result['mean_uncertainty']:.4f} | {result['unobservable_steps'] / result['steps']:.1%} |"
         for name, result in evaluations.items()
     ]
+    paired_rows = [
+        (
+            f"| {name} | {metrics['mean_sensor_cost']['mean']:.3f} "
+            f"[{metrics['mean_sensor_cost']['ci95_low']:.3f}, "
+            f"{metrics['mean_sensor_cost']['ci95_high']:.3f}] | "
+            f"{metrics['mean_uncertainty']['mean']:.4f} "
+            f"[{metrics['mean_uncertainty']['ci95_low']:.4f}, "
+            f"{metrics['mean_uncertainty']['ci95_high']:.4f}] |"
+        )
+        for name, metrics in paired_comparisons.items()
+    ]
     text = [
         "# RL 自适应传感器选择实验",
         "",
@@ -275,6 +344,15 @@ def _write_summary(
         "| 策略 | 平均回报 | 平均成本 | 平均不确定度 | 不可观测率 |",
         "|---|---:|---:|---:|---:|",
         *rows,
+        "",
+        "## 配对 episode 差异（Q-learning − 基线）",
+        "",
+        "| 基线 | 平均成本差 [95% 区间] | 平均不确定度差 [95% 区间] |",
+        "|---|---:|---:|",
+        *paired_rows,
+        "",
+        "负成本差表示 Q-learning 更省，负不确定度差表示 Q-learning 的协方差代理更低。",
+        "区间是 episode 间标准误的正态近似，不是实车总体置信保证。",
         "",
         "## 可复现设置",
         "",

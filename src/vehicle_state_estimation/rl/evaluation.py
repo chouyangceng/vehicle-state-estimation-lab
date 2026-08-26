@@ -96,6 +96,7 @@ def evaluate_policy(
     fallback_steps = 0
     unobservable_steps = 0
     switching_steps = 0
+    episode_metrics: list[dict[str, float | int]] = []
 
     for episode in range(episodes):
         environment = environment_factory(episode)
@@ -104,12 +105,16 @@ def evaluate_policy(
         state, _ = environment.reset()
         terminated = False
         episode_return = 0.0
+        episode_uncertainties: list[float] = []
+        episode_costs: list[float] = []
         while not terminated:
             action = policy(state, environment)
             state, reward, terminated, info = environment.step(action)
             episode_return += reward
             uncertainties.append(float(info["normalized_uncertainty"]))
             costs.append(float(info["normalized_sensor_cost"]))
+            episode_uncertainties.append(float(info["normalized_uncertainty"]))
+            episode_costs.append(float(info["normalized_sensor_cost"]))
             fallback_steps += int(info["fallback_used"])
             unobservable_steps += int(not info["observable"])
             switching_steps += int(info["switched"])
@@ -119,6 +124,14 @@ def evaluate_policy(
             for name, value in info["reward_components"].items():
                 reward_components[str(name)] += float(value)
         returns.append(episode_return)
+        episode_metrics.append(
+            {
+                "episode": episode,
+                "return": float(episode_return),
+                "mean_uncertainty": float(np.mean(episode_uncertainties)),
+                "mean_sensor_cost": float(np.mean(episode_costs)),
+            }
+        )
 
     step_count = len(uncertainties)
     return {
@@ -133,4 +146,5 @@ def evaluate_policy(
         "switching_steps": switching_steps,
         "action_counts": {str(action): action_counts[action] for action in range(7)},
         "reward_components": dict(sorted(reward_components.items())),
+        "episode_metrics": episode_metrics,
     }

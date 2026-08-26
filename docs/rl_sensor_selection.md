@@ -12,10 +12,11 @@ python experiments/rl_sensor_selection.py --fast --seed 7
 
 - `policy.json`：版本化 Q 表、动作定义、分箱和实验元数据；
 - `training_history.csv`：逐 episode 回报、不确定度、成本和故障回退次数；
-- `evaluation.json`：学习策略与四个基线的严格 JSON 指标；
+- `evaluation.json`：学习策略与四个基线的逐 episode 指标、汇总值及配对差异区间；
 - `policy_comparison.csv`：适合表格软件分析的策略对照；
+- `paired_comparison.csv`：Q-learning 减去各基线的逐 episode 配对均值差和 95% 区间；
 - `training_curve.png`：回报、协方差代理和成本的训练过程；
-- `tradeoff.png`：成本—不确定度前沿；
+- `tradeoff.png`：带 episode 间 95% 均值区间的成本—不确定度前沿；
 - `action_usage.png`：七种传感器组合的占比；
 - `summary.md`：带预先声明判断条件的中文结论。
 
@@ -62,6 +63,10 @@ P^+ = \left((P^-)^{-1}+J\right)^{-1}.
 3. 固定最低成本轮速；
 4. 带种子的均匀随机策略；
 5. 当前窗口信息量贪心策略。
+
+报告保留每个策略的逐 episode 回报、平均成本和平均不确定度，并按同一 episode 编号计算
+Q-learning 减去基线的配对差异。连续指标的 95% 区间使用 episode 间样本标准差和正态近似；
+它描述本批仿真工况的离散程度，不应解释为对真实道路总体的置信保证。
 
 只有当 Q-learning 同时降低成本，并把平均不确定度退化控制在 10% 内、不可观测率退化控制在 5 个百分点内，报告才会描述为优于全传感器基线；否则只描述为不同权衡。
 
