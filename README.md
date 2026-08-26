@@ -23,6 +23,10 @@
 
 核心代码位于 `src/vehicle_state_estimation/`。`models` 保存车辆和轮胎模型，`filters` 保存 EKF/UKF，`simulation` 提供噪声、延迟、丢包和偏置故障，`metrics` 提供 RMSE/NIS/NEES。
 
+## 自适应传感器选择：阶段 1
+
+`rl/` 已实现纯 NumPy、可解释的传感器选择策略核心：默认离散状态为速度 × 横向激励 × 不确定度 × 健康掩码 × 上一动作，共 2304 个状态；`QLearningAgent` 提供带种子的 epsilon-greedy 探索、Bellman 更新和确定性并列决策。本阶段只交付经过测试的分箱与学习内核，尚不把它描述为完成了环境训练或实车部署。
+
 ## 研究问题
 
 - 运动学和动力学自行车模型在不同速度下有什么差异？
